@@ -1,0 +1,104 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/CPU.hdl
+
+/**
+ * The Hack CPU (Central Processing unit), consisting of an ALU,
+ * two registers named A and D, and a program counter named PC.
+ * The CPU is designed to fetch and execute instructions written in 
+ * the Hack machine language. In particular, functions as follows:
+ * Executes the inputted instruction according to the Hack machine 
+ * language specification. The D and A in the language specification
+ * refer to CPU-resident registers, while M refers to the external
+ * memory location addressed by A, i.e. to Memory[A]. The inM input 
+ * holds the value of this location. If the current instruction needs 
+ * to write a value to M, the value is placed in outM, the address 
+ * of the target location is placed in the addressM output, and the 
+ * writeM control bit is asserted. (When writeM==0, any value may 
+ * appear in outM). The outM and writeM outputs are combinational: 
+ * they are affected instantaneously by the execution of the current 
+ * instruction. The addressM and pc outputs are clocked: although they 
+ * are affected by the execution of the current instruction, they commit 
+ * to their new values only in the next time step. If reset==1 then the 
+ * CPU jumps to address 0 (i.e. pc is set to 0 in next time step) rather 
+ * than to the address resulting from executing the current instruction. 
+ */
+
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current
+                         // program (reset==1) or continue executing
+                         // the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // address of next instruction
+
+    PARTS:
+    // Put your code here:
+
+    Mux16(a = instruction, b = saidaALU , sel = instruction[15], out = saidaMUX1); 
+                                                                               // Entrada: instruction16 e saida do ALU.
+
+    ARegister(in = saidaMUX1, load = writeA, out[0..14] = addressM, out = saidaREGA); 
+                                                                               // Register A: recebe a saida do mux1 como entrada.
+                                                                               // writeA indica se havera escrita nesse registrador.
+                                                                               // Uma de suas saidas vai direto para a saida do CPU 
+                                                                               // addressM, a outra é uma das entradas no mux 2.
+
+                                                                               // writeA vem da decisao feita por operacoes de AND, 
+                                                                               // OR e NOT dos bits ddd da sequencia
+                                                                               // ixxaccccccdddjjj, que determinam o registrador de
+                                                                               // destino.
+
+    Mux16(a = saidaREGA, b = inM, sel = instruction[12], out = saidaMUX2 );	   // instruction[12] corresponde ao bit a da sequencia 
+                                                                               // ixxaccccccdddjjj, que determina se a ALU ira 
+                                                                               // operar no registrador A ou M.
+
+    ALU(x = saidaREGD, y = saidaMUX2, zx = instruction[11], nx = instruction[10], zy = instruction[9], ny = instruction[8], f = instruction[7], no = instruction[6], out = outM, out = saidaALU, zr = zero, ng = negativo);
+
+                                                                             // zx, nx, zy, ny, f e no recebem os bits cccccc da
+                                                                             // sequencia ixxaccccccdddjjj que controlam as
+                                                                             // operacoes da ALU
+
+    DRegister(in = saidaALU, load = writeD, out = saidaREGD);
+                                                                             // Register D: recebe a saida da ALU e sua saida volta
+                                                                             // para ALU. writeD tambem vem da decisao feita por
+                                                                             // operacoes de AND, OR e NOT dos bits ddd da sequencia
+                                                                             // ixxaccccccdddjjj, que determinam o registrador de
+                                                                             // destino.
+
+    PC(in = saidaREGA, load = jump2, inc = naoJump2, reset = reset , out[0..14] = pc );
+                                                                             // Uma das entradas do PC vem direto do registrador A
+                                                                             // e sua saida vai direto para saida pc do CPU.
+                                                                             // reset tambem e uma entrada que vem direto do CPU.
+                                                                             // load e inc recebem informacoes de acordo com 
+                                                                             // operacoes de Jump computadas entre os bits jjj
+                                                                             // da sequencia ixxaccccccdddjjj
+
+
+    And(a=instruction[3], b=instruction[15], out=writeM);                    // A partir desse ponto, todas as operacoes e decisoes 
+    And(a=instruction[4], b=instruction[15], out=writeD);                    // podem ser consultadas em tabelas na bibliografia do
+    And(a=instruction[5], b=instruction[15], out=insWriteA);                 // material, como por exemplo a decisao de se escrever
+    Not(in=instruction[15], out=addWriteA);                                  // na saida writeM do CPU se os bits 3 e 15 de 
+    Or(a=insWriteA, b=addWriteA, out=writeA);                                // instruction forem 1. Ou seja, bit 15 decide o tipo
+                                                                             // da intrucao (A ou C) e o bit 3 decide um destino
+
+    Not(in=zero, out=naoZero);                                               // O mesmo para operacoes entre os bits de Jump.
+    Not(in=negativo, out=naoNegativo);
+    And(a=naoZero, b=naoNegativo, out=positivo);
+    And(a=instruction[0], b=instruction[15], out=insJumpPos);
+    And(a=instruction[1], b=instruction[15], out=insJumpZero);
+    And(a=instruction[2], b=instruction[15], out=insJumpNeg);
+    And(a=insJumpPos, b=positivo, out=jumpPos);
+    And(a=insJumpZero, b=zero, out=jumpZero);
+    And(a=insJumpNeg, b=negativo, out=jumpNeg);
+    Or(a=jumpPos, b=jumpZero, out=jump1);
+    Or(a=jump1, b=jumpNeg, out=jump2);
+    Not(in=jump2, out=naoJump2);
+
+}		
